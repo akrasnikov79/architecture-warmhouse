@@ -3,10 +3,19 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
+var locationToId = new Dictionary<string, string>
+{
+    { "Living Room", "1" },
+    { "Bedroom", "2" },
+    { "Kitchen", "3" }
+};
+var idToLocation = locationToId.ToDictionary(kv => kv.Value, kv => kv.Key);
+
 app.MapGet("/temperature", (string? location) =>
 {
+    var loc = location ?? "Unknown";
+    var sensorId = locationToId.TryGetValue(loc, out var id) ? id : "0";
     var value = Math.Round(Random.Shared.NextDouble() * 50 - 10, 1);
-    var loc = location ?? "unknown";
     return Results.Ok(new TemperatureResponse
     {
         Value = value,
@@ -14,7 +23,7 @@ app.MapGet("/temperature", (string? location) =>
         Timestamp = DateTime.UtcNow,
         Location = loc,
         Status = "active",
-        SensorId = "",
+        SensorId = sensorId,
         SensorType = "temperature",
         Description = $"Temperature reading at {loc}"
     });
@@ -22,13 +31,14 @@ app.MapGet("/temperature", (string? location) =>
 
 app.MapGet("/temperature/{sensorId}", (string sensorId) =>
 {
+    var loc = idToLocation.TryGetValue(sensorId, out var l) ? l : "Unknown";
     var value = Math.Round(Random.Shared.NextDouble() * 50 - 10, 1);
     return Results.Ok(new TemperatureResponse
     {
         Value = value,
         Unit = "°C",
         Timestamp = DateTime.UtcNow,
-        Location = "",
+        Location = loc,
         Status = "active",
         SensorId = sensorId,
         SensorType = "temperature",

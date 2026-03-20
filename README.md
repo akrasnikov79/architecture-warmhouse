@@ -44,36 +44,50 @@
 
 ![C4 Context — Система «Тёплый дом»](docs/diagrams/images/01-context-warmhouse.svg)
 
+[Исходник (.puml)](docs/diagrams/01-context-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/01-context-warmhouse.svg)
+
 # Задание 2. Проектирование микросервисной архитектуры
 
 **Диаграмма контейнеров As-Is (текущее состояние)**
 
 ![C4 Container As-Is — Текущая архитектура](docs/diagrams/images/02-container-asis-warmhouse.svg)
 
+[Исходник (.puml)](docs/diagrams/02-container-asis-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/02-container-asis-warmhouse.svg)
+
 **Диаграмма контейнеров To-Be (целевая архитектура)**
 
 ![C4 Container To-Be — Целевая микросервисная архитектура](docs/diagrams/images/03-container-tobe-warmhouse.svg)
+
+[Исходник (.puml)](docs/diagrams/03-container-tobe-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/03-container-tobe-warmhouse.svg)
 
 **Диаграмма компонентов (Components)**
 Для микросервиса *Device Service* (Управление устройствами)
 
 ![C4 Component — Device Service](docs/diagrams/images/04-component-device-warmhouse.svg)
 
+[Исходник (.puml)](docs/diagrams/04-component-device-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/04-component-device-warmhouse.svg)
+
 **Диаграмма кода (Code)** 
 Диаграмма последовательности для успешного выполнения команды включения реле-устройства.
 
 ![Sequence — Команда включения реле](docs/diagrams/images/05-sequence-relay-warmhouse.svg)
+
+[Исходник (.puml)](docs/diagrams/05-sequence-relay-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/05-sequence-relay-warmhouse.svg)
 
 **Диаграмма последовательности для автоматического срабатывания сценария**
 Пример: датчик температуры фиксирует 29°C, что превышает порог 28°C в сценарии — система автоматически выключает котёл.
 
 ![Sequence — Автоматический сценарий при превышении температуры](docs/diagrams/images/06-sequence-automation-warmhouse.svg)
 
+[Исходник (.puml)](docs/diagrams/06-sequence-automation-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/06-sequence-automation-warmhouse.svg)
+
 # Задание 3. Разработка ER-диаграммы
 
 В целевой архитектуре применяется паттерн **Database per Service** — каждый микросервис владеет собственной базой данных. Между контекстами нет внешних ключей (FK); связь осуществляется через логические ссылки по ID и обеспечивается согласованность на уровне приложений (eventual consistency).
 
 ![ER-диаграмма — Database per Service](docs/diagrams/images/07-er-diagram-warmhouse.svg)
+
+[Исходник (.puml)](docs/diagrams/07-er-diagram-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/07-er-diagram-warmhouse.svg)
 
 # Задание 4. Создание и документирование API
 

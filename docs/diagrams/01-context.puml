@@ -1,0 +1,12 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+Person(user, "Пользователь", "Владелец умного дома")
+System(warmhouse, "Система «Тёплый дом» (Монолит)", "Обеспечивает управление отоплением и мониторинг температуры")
+System_Ext(web_client, "Веб-клиент", "SPA в браузере пользователя для управления экосистемой")
+System_Ext(sensors, "Датчики и реле", "Устройства, установленные в домах (температурные датчики, реле котла)")
+
+Rel(user, web_client, "Взаимодействует через браузер", "HTTPS")
+Rel(web_client, warmhouse, "Просматривает температуру, управляет отоплением", "HTTP/REST")
+Rel(warmhouse, sensors, "Опрашивает термометры, отправляет команды на реле", "Синхронные запросы")
+@enduml

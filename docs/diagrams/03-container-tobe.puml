@@ -1,0 +1,52 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user, "Пользователь", "Покупает устройства SaaS и управляет домом")
+
+System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
+    Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
+    Container(api_gateway, "API Gateway", "Go", "Единая точка входа, авторизация, маршрутизация")
+
+    Container(user_service, "User & Auth Service", "Go", "Управление пользователями, аутентификация, авторизация, JWT")
+    ContainerDb(user_db, "User DB", "PostgreSQL", "Профили пользователей, роли, токены")
+
+    Container(home_service, "Home Management Service", "Go", "Управление домами, комнатами, группами устройств")
+    ContainerDb(home_db, "Home DB", "PostgreSQL", "Дома, комнаты, привязки")
+
+    Container(device_service, "Device Service", "Go", "Управление реестром устройств, отправка команд")
+    ContainerDb(device_db, "Device DB", "PostgreSQL", "Хранение списка устройств и их состояний")
+
+    Container(telemetry_service, "Telemetry Service", "Go", "Сбор и агрегация данных телеметрии")
+    ContainerDb(telemetry_db, "Telemetry DB", "TimescaleDB", "Хранение истории показаний")
+
+    Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
+    ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
+
+    Container(mqtt_broker, "MQTT Broker", "Mosquitto", "Приём данных от IoT-устройств и отправка команд на них")
+    Container(message_broker, "Message Broker", "Kafka", "Асинхронная передача событий между сервисами")
+}
+
+System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
+
+Rel(user, web_app, "Управляет экосистемой", "HTTPS")
+Rel(web_app, api_gateway, "REST API вызовы", "HTTPS")
+
+Rel(api_gateway, user_service, "Аутентификация / авторизация", "REST")
+Rel(api_gateway, home_service, "Управление домами", "REST")
+Rel(api_gateway, device_service, "Управление устройствами", "REST")
+Rel(api_gateway, telemetry_service, "Получение истории", "REST")
+Rel(api_gateway, scenario_service, "Настройка правил", "REST")
+
+Rel(user_service, user_db, "Чтение/запись", "SQL")
+Rel(home_service, home_db, "Чтение/запись", "SQL")
+Rel(device_service, device_db, "Чтение/запись", "SQL")
+Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
+Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
+
+Rel(devices, mqtt_broker, "Отправка телеметрии и статусов", "MQTT")
+Rel(device_service, mqtt_broker, "Отправка команд на устройства", "MQTT")
+Rel(mqtt_broker, message_broker, "Пересылка событий от устройств", "Kafka Connect / Bridge")
+Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "Kafka")
+Rel(telemetry_service, message_broker, "Слушает события телеметрии", "Kafka")
+Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "Kafka")
+@enduml

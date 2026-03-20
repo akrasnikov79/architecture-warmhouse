@@ -42,352 +42,38 @@
 
 ### 5. Визуализация контекста системы — диаграмма С4
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
-
-Person(user, "Пользователь", "Владелец умного дома")
-System(warmhouse, "Система «Тёплый дом» (Монолит)", "Обеспечивает управление отоплением и мониторинг температуры")
-System_Ext(web_client, "Веб-клиент", "SPA в браузере пользователя для управления экосистемой")
-System_Ext(sensors, "Датчики и реле", "Устройства, установленные в домах (температурные датчики, реле котла)")
-
-Rel(user, web_client, "Взаимодействует через браузер", "HTTPS")
-Rel(web_client, warmhouse, "Просматривает температуру, управляет отоплением", "HTTP/REST")
-Rel(warmhouse, sensors, "Опрашивает термометры, отправляет команды на реле", "Синхронные запросы")
-@enduml
-```
+![C4 Context — Система «Тёплый дом»](docs/diagrams/images/01-context.svg)
 
 # Задание 2. Проектирование микросервисной архитектуры
 
 **Диаграмма контейнеров As-Is (текущее состояние)**
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
-
-Person(user, "Пользователь", "Владелец дома с подключённым отоплением")
-
-System_Boundary(current, "Текущая система «Тёплый дом» (As-Is)") {
-    Container(monolith, "Монолитное приложение", "Go", "Обработка запросов, бизнес-логика, работа с данными — всё в одном приложении")
-    ContainerDb(postgres, "PostgreSQL", "PostgreSQL", "Единая БД для всех данных (пользователи, датчики, показания)")
-}
-
-System_Ext(sensors, "Датчики и реле", "Температурные датчики и реле котлов, установленные в домах")
-
-Rel(user, monolith, "Просматривает температуру, управляет отоплением", "HTTP")
-Rel(monolith, postgres, "Чтение/запись всех данных", "SQL")
-Rel(monolith, sensors, "Синхронный опрос датчиков и отправка команд", "HTTP")
-@enduml
-```
+![C4 Container As-Is — Текущая архитектура](docs/diagrams/images/02-container-asis.svg)
 
 **Диаграмма контейнеров To-Be (целевая архитектура)**
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
-
-Person(user, "Пользователь", "Покупает устройства SaaS и управляет домом")
-
-System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
-    Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
-    Container(api_gateway, "API Gateway", "Go", "Единая точка входа, авторизация, маршрутизация")
-
-    Container(user_service, "User & Auth Service", "Go", "Управление пользователями, аутентификация, авторизация, JWT")
-    ContainerDb(user_db, "User DB", "PostgreSQL", "Профили пользователей, роли, токены")
-
-    Container(home_service, "Home Management Service", "Go", "Управление домами, комнатами, группами устройств")
-    ContainerDb(home_db, "Home DB", "PostgreSQL", "Дома, комнаты, привязки")
-
-    Container(device_service, "Device Service", "Go", "Управление реестром устройств, отправка команд")
-    ContainerDb(device_db, "Device DB", "PostgreSQL", "Хранение списка устройств и их состояний")
-
-    Container(telemetry_service, "Telemetry Service", "Go", "Сбор и агрегация данных телеметрии")
-    ContainerDb(telemetry_db, "Telemetry DB", "TimescaleDB", "Хранение истории показаний")
-
-    Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
-    ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
-
-    Container(mqtt_broker, "MQTT Broker", "Mosquitto", "Приём данных от IoT-устройств и отправка команд на них")
-    Container(message_broker, "Message Broker", "Kafka", "Асинхронная передача событий между сервисами")
-}
-
-System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
-
-Rel(user, web_app, "Управляет экосистемой", "HTTPS")
-Rel(web_app, api_gateway, "REST API вызовы", "HTTPS")
-
-Rel(api_gateway, user_service, "Аутентификация / авторизация", "REST")
-Rel(api_gateway, home_service, "Управление домами", "REST")
-Rel(api_gateway, device_service, "Управление устройствами", "REST")
-Rel(api_gateway, telemetry_service, "Получение истории", "REST")
-Rel(api_gateway, scenario_service, "Настройка правил", "REST")
-
-Rel(user_service, user_db, "Чтение/запись", "SQL")
-Rel(home_service, home_db, "Чтение/запись", "SQL")
-Rel(device_service, device_db, "Чтение/запись", "SQL")
-Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
-Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
-
-Rel(devices, mqtt_broker, "Отправка телеметрии и статусов", "MQTT")
-Rel(device_service, mqtt_broker, "Отправка команд на устройства", "MQTT")
-Rel(mqtt_broker, message_broker, "Пересылка событий от устройств", "Kafka Connect / Bridge")
-Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "Kafka")
-Rel(telemetry_service, message_broker, "Слушает события телеметрии", "Kafka")
-Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "Kafka")
-@enduml
-```
+![C4 Container To-Be — Целевая микросервисная архитектура](docs/diagrams/images/03-container-tobe.svg)
 
 **Диаграмма компонентов (Components)**
 Для микросервиса *Device Service* (Управление устройствами)
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
-
-Container_Boundary(device_service, "Device Service") {
-    Component(api, "API Layer", "Go HTTP", "Предоставляет REST интерфейс")
-    Component(device_manager, "Device Manager", "Go", "Бизнес-логика: добавление, обновление, привязка устройств к дому")
-    Component(command_sender, "Command Dispatcher", "Go", "Отправка управляющих команд в сеть или брокер устройств")
-    Component(repo, "Database Repository", "Go", "Абстракция доступа к базе данных")
-    Component(event_publisher, "Event Publisher", "Go", "Отправка событий об изменении стейта в Message Broker")
-}
-
-ContainerDb(device_db, "Device DB", "PostgreSQL", "Схема данных Device")
-Container(message_broker, "Message Broker", "Kafka", "Шина событий")
-System_Ext(devices, "Умные устройства", "Конечные устройства в домах")
-
-Rel(api, device_manager, "Вызывает методы (Сreate, Update)")
-Rel(api, command_sender, "Делегирует команду включения/выключения")
-Rel(device_manager, repo, "Сохраняет состояние")
-Rel(device_manager, event_publisher, "Формирует событие DeviceRegistered/DeviceUpdated")
-Rel(repo, device_db, "Выполняет CRUD-запросы", "SQL")
-Rel(event_publisher, message_broker, "Публикует сообщения", "TCP")
-Rel(command_sender, devices, "Отправляет сигнал", "HTTP / MQTT")
-@enduml
-```
+![C4 Component — Device Service](docs/diagrams/images/04-component-device.svg)
 
 **Диаграмма кода (Code)** 
 Диаграмма последовательности для успешного выполнения команды включения реле-устройства.
 
-```plantuml
-@startuml
-actor User
-participant "API Gateway" as GW
-participant "Device Service" as DS
-database "Device DB" as DB
-participant "Message Broker" as Kafka
-participant "Heating Relay" as Relay
-
-User -> GW: POST /devices/{id}/commands \n { "action": "turn_on" }
-GW -> DS: Forward Request
-DS -> DB: SELECT device FROM devices WHERE id={id}
-DB --> DS: Device Info & Status
-DS -> Relay: Send action "turn_on" (HTTP/MQTT)
-Relay --> DS: OK
-DS -> DB: UPDATE devices SET status='on' WHERE id={id}
-DS -> Kafka: Publish "DeviceStatusChanged" {status: on}
-DS --> GW: 200 OK
-GW --> User: 200 OK
-@enduml
-```
+![Sequence — Команда включения реле](docs/diagrams/images/05-sequence-relay.svg)
 
 **Диаграмма последовательности для автоматического срабатывания сценария**
 Пример: датчик температуры фиксирует 29°C, что превышает порог 28°C в сценарии — система автоматически выключает котёл.
 
-```plantuml
-@startuml
-participant "Датчик температуры" as Sensor
-participant "MQTT Broker\n(Mosquitto)" as MQTT
-participant "Kafka" as Kafka
-participant "Telemetry Service" as TS
-database "Telemetry DB\n(TimescaleDB)" as TDB
-participant "Automation Service" as AS
-database "Scenario DB" as SDB
-participant "Device Service" as DS
-database "Device DB" as DDB
-participant "Реле котла" as Relay
-
-== 1. Получение показания датчика ==
-Sensor -> MQTT: PUBLISH topic: devices/sensor-01/telemetry\n{ metric: "temperature", value: 29.0, unit: "°C" }
-MQTT -> Kafka: Kafka Connect / Bridge\nтопик: telemetry.reading\n{ device_id: "sensor-01", metric: "temperature", value: 29.0 }
-
-== 2. Сохранение телеметрии ==
-Kafka -> TS: Consume telemetry.reading
-TS -> TDB: INSERT INTO telemetry_data\n(device_id, metric_name, metric_value, unit, recorded_at)\nVALUES ('sensor-01', 'temperature', 29.0, '°C', NOW())
-TDB --> TS: OK
-
-== 3. Проверка сценариев ==
-Kafka -> AS: Consume telemetry.reading
-AS -> SDB: SELECT sa.* FROM scenario_actions sa\nJOIN scenarios s ON s.scenario_id = sa.scenario_id\nWHERE s.is_active = true\nAND sa.trigger_type = 'telemetry_threshold'\nAND sa.trigger_condition->>'device_id' = 'sensor-01'\nAND sa.trigger_condition->>'metric' = 'temperature'
-SDB --> AS: Правило найдено:\noperator: ">", value: 28,\naction: { device_id: "relay-01", command: "turn_off" }
-
-AS -> AS: Проверка условия:\n29.0 > 28? — ДА
-
-== 4. Выполнение действия ==
-AS -> DS: POST /devices/relay-01/command\n{ "command": "turn_off" }
-DS -> DDB: SELECT * FROM devices WHERE device_id = 'relay-01'
-DDB --> DS: Device Info (status: 'on', is_online: true)
-DS -> MQTT: PUBLISH topic: devices/relay-01/command\n{ command: "turn_off" }
-MQTT -> Relay: Deliver command "turn_off"
-Relay --> MQTT: ACK
-MQTT --> DS: ACK
-DS -> DDB: UPDATE devices SET status = 'off' WHERE device_id = 'relay-01'
-DS -> Kafka: Publish device.status-changed\n{ device_id: "relay-01", previous_status: "on", status: "off" }
-DS --> AS: 200 OK
-@enduml
-```
+![Sequence — Автоматический сценарий при превышении температуры](docs/diagrams/images/06-sequence-automation.svg)
 
 # Задание 3. Разработка ER-диаграммы
 
 В целевой архитектуре применяется паттерн **Database per Service** — каждый микросервис владеет собственной базой данных. Между контекстами нет внешних ключей (FK); связь осуществляется через логические ссылки по ID и обеспечивается согласованность на уровне приложений (eventual consistency).
 
-```plantuml
-@startuml
-skinparam packageStyle rectangle
-
-package "User DB (User & Auth Service)" as user_ctx #E8F5E9 {
-  entity "users" as users {
-    * user_id : uuid <<PK>>
-    --
-    email : varchar <<unique>>
-    password_hash : varchar
-    role_id : int <<FK>>
-    created_at : timestamptz
-  }
-
-  entity "roles" as roles {
-    * role_id : serial <<PK>>
-    --
-    name : varchar <<unique>>
-    description : varchar
-  }
-
-  entity "refresh_tokens" as tokens {
-    * token_id : uuid <<PK>>
-    --
-    user_id : uuid <<FK>>
-    token_hash : varchar
-    expires_at : timestamptz
-    created_at : timestamptz
-  }
-
-  users }o--|| roles : "Имеет роль"
-  users ||--o{ tokens : "Имеет токены"
-}
-
-package "Home DB (Home Management Service)" as home_ctx #E3F2FD {
-  entity "houses" as houses {
-    * house_id : uuid <<PK>>
-    --
-    owner_user_id : uuid
-    name : varchar
-    address : varchar
-    created_at : timestamptz
-  }
-  note right of houses::owner_user_id
-    Логическая ссылка
-    на User Service
-  end note
-
-  entity "rooms" as rooms {
-    * room_id : uuid <<PK>>
-    --
-    house_id : uuid <<FK>>
-    name : varchar
-    floor : int
-  }
-
-  entity "modules" as modules {
-    * module_id : uuid <<PK>>
-    --
-    house_id : uuid <<FK>>
-    serial_number : varchar <<unique>>
-    firmware_version : varchar
-    status : varchar
-    ip_address : varchar
-  }
-
-  houses ||--o{ rooms : "Содержит"
-  houses ||--o{ modules : "Установлен"
-}
-
-package "Device DB (Device Service)" as device_ctx #FFF3E0 {
-  entity "device_types" as dev_types {
-    * type_id : serial <<PK>>
-    --
-    name : varchar
-    description : varchar
-    protocol : varchar
-  }
-
-  entity "devices" as devices {
-    * device_id : uuid <<PK>>
-    --
-    room_id : uuid
-    module_id : uuid
-    type_id : int <<FK>>
-    serial_number : varchar <<unique>>
-    name : varchar
-    status : varchar
-    is_online : boolean
-    last_seen_at : timestamptz
-  }
-  note right of devices::room_id
-    Логическая ссылка
-    на Home Service
-  end note
-
-  devices }o--|| dev_types : "Имеет тип"
-}
-
-package "Telemetry DB (Telemetry Service) — TimescaleDB" as telemetry_ctx #F3E5F5 {
-  entity "telemetry_data" as telemetry {
-    * recorded_at : timestamptz <<PK>>
-    * device_id : uuid <<PK>>
-    --
-    metric_name : varchar
-    metric_value : double precision
-    unit : varchar
-  }
-  note bottom of telemetry
-    Hypertable (TimescaleDB)
-    Партиционирование по recorded_at
-  end note
-}
-
-package "Scenario DB (Automation Service)" as scenario_ctx #FFEBEE {
-  entity "scenarios" as scenarios {
-    * scenario_id : uuid <<PK>>
-    --
-    house_id : uuid
-    name : varchar
-    description : text
-    is_active : boolean
-    created_at : timestamptz
-  }
-
-  entity "scenario_actions" as actions {
-    * action_id : uuid <<PK>>
-    --
-    scenario_id : uuid <<FK>>
-    trigger_type : varchar
-    trigger_condition : jsonb
-    action_type : varchar
-    action_payload : jsonb
-    order_index : int
-  }
-
-  scenarios ||--o{ actions : "Содержит действия"
-}
-
-' Межсервисные логические связи (пунктир)
-users ..> houses : "owner_user_id"
-rooms ..> devices : "room_id"
-modules ..> devices : "module_id"
-devices ..> telemetry : "device_id"
-houses ..> scenarios : "house_id"
-@enduml
-```
+![ER-диаграмма — Database per Service](docs/diagrams/images/07-er-diagram.svg)
 
 # Задание 4. Создание и документирование API
 

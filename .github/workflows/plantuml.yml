@@ -1,0 +1,24 @@
+name: Generate PlantUML diagrams
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SVG from PlantUML
+        uses: holowczak/github-action-plantuml@v1
+        with:
+          filePattern: docs/diagrams/*.puml
+          outputDir: docs/diagrams/images
+          format: svg
+
+      - name: Commit generated SVGs
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: regenerate PlantUML diagrams [skip ci]"
+          file_pattern: docs/diagrams/images/*.svg

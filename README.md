@@ -116,11 +116,11 @@ System_Ext(devices, "Умные устройства", "Датчики, реле
 Rel(user, web_app, "Управляет экосистемой", "HTTPS")
 Rel(web_app, api_gateway, "REST API вызовы", "HTTPS")
 
-Rel(api_gateway, user_service, "Аутентификация / авторизация", "REST/gRPC")
-Rel(api_gateway, home_service, "Управление домами", "REST/gRPC")
-Rel(api_gateway, device_service, "Управление устройствами", "REST/gRPC")
-Rel(api_gateway, telemetry_service, "Получение истории", "REST/gRPC")
-Rel(api_gateway, scenario_service, "Настройка правил", "REST/gRPC")
+Rel(api_gateway, user_service, "Аутентификация / авторизация", "REST")
+Rel(api_gateway, home_service, "Управление домами", "REST")
+Rel(api_gateway, device_service, "Управление устройствами", "REST")
+Rel(api_gateway, telemetry_service, "Получение истории", "REST")
+Rel(api_gateway, scenario_service, "Настройка правил", "REST")
 
 Rel(user_service, user_db, "Чтение/запись", "SQL")
 Rel(home_service, home_db, "Чтение/запись", "SQL")
@@ -145,7 +145,7 @@ Rel(scenario_service, message_broker, "Слушает триггеры, вызы
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 Container_Boundary(device_service, "Device Service") {
-    Component(api, "API Layer", "Go HTTP/gRPC", "Предоставляет REST/gRPC интерфейс")
+    Component(api, "API Layer", "Go HTTP", "Предоставляет REST интерфейс")
     Component(device_manager, "Device Manager", "Go", "Бизнес-логика: добавление, обновление, привязка устройств к дому")
     Component(command_sender, "Command Dispatcher", "Go", "Отправка управляющих команд в сеть или брокер устройств")
     Component(repo, "Database Repository", "Go", "Абстракция доступа к базе данных")

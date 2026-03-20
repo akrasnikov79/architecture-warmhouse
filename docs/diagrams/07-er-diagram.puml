@@ -1,0 +1,145 @@
+@startuml
+skinparam packageStyle rectangle
+
+package "User DB (User & Auth Service)" as user_ctx #E8F5E9 {
+  entity "users" as users {
+    * user_id : uuid <<PK>>
+    --
+    email : varchar <<unique>>
+    password_hash : varchar
+    role_id : int <<FK>>
+    created_at : timestamptz
+  }
+
+  entity "roles" as roles {
+    * role_id : serial <<PK>>
+    --
+    name : varchar <<unique>>
+    description : varchar
+  }
+
+  entity "refresh_tokens" as tokens {
+    * token_id : uuid <<PK>>
+    --
+    user_id : uuid <<FK>>
+    token_hash : varchar
+    expires_at : timestamptz
+    created_at : timestamptz
+  }
+
+  users }o--|| roles : "Имеет роль"
+  users ||--o{ tokens : "Имеет токены"
+}
+
+package "Home DB (Home Management Service)" as home_ctx #E3F2FD {
+  entity "houses" as houses {
+    * house_id : uuid <<PK>>
+    --
+    owner_user_id : uuid
+    name : varchar
+    address : varchar
+    created_at : timestamptz
+  }
+  note right of houses::owner_user_id
+    Логическая ссылка
+    на User Service
+  end note
+
+  entity "rooms" as rooms {
+    * room_id : uuid <<PK>>
+    --
+    house_id : uuid <<FK>>
+    name : varchar
+    floor : int
+  }
+
+  entity "modules" as modules {
+    * module_id : uuid <<PK>>
+    --
+    house_id : uuid <<FK>>
+    serial_number : varchar <<unique>>
+    firmware_version : varchar
+    status : varchar
+    ip_address : varchar
+  }
+
+  houses ||--o{ rooms : "Содержит"
+  houses ||--o{ modules : "Установлен"
+}
+
+package "Device DB (Device Service)" as device_ctx #FFF3E0 {
+  entity "device_types" as dev_types {
+    * type_id : serial <<PK>>
+    --
+    name : varchar
+    description : varchar
+    protocol : varchar
+  }
+
+  entity "devices" as devices {
+    * device_id : uuid <<PK>>
+    --
+    room_id : uuid
+    module_id : uuid
+    type_id : int <<FK>>
+    serial_number : varchar <<unique>>
+    name : varchar
+    status : varchar
+    is_online : boolean
+    last_seen_at : timestamptz
+  }
+  note right of devices::room_id
+    Логическая ссылка
+    на Home Service
+  end note
+
+  devices }o--|| dev_types : "Имеет тип"
+}
+
+package "Telemetry DB (Telemetry Service) — TimescaleDB" as telemetry_ctx #F3E5F5 {
+  entity "telemetry_data" as telemetry {
+    * recorded_at : timestamptz <<PK>>
+    * device_id : uuid <<PK>>
+    --
+    metric_name : varchar
+    metric_value : double precision
+    unit : varchar
+  }
+  note bottom of telemetry
+    Hypertable (TimescaleDB)
+    Партиционирование по recorded_at
+  end note
+}
+
+package "Scenario DB (Automation Service)" as scenario_ctx #FFEBEE {
+  entity "scenarios" as scenarios {
+    * scenario_id : uuid <<PK>>
+    --
+    house_id : uuid
+    name : varchar
+    description : text
+    is_active : boolean
+    created_at : timestamptz
+  }
+
+  entity "scenario_actions" as actions {
+    * action_id : uuid <<PK>>
+    --
+    scenario_id : uuid <<FK>>
+    trigger_type : varchar
+    trigger_condition : jsonb
+    action_type : varchar
+    action_payload : jsonb
+    order_index : int
+  }
+
+  scenarios ||--o{ actions : "Содержит действия"
+}
+
+' Межсервисные логические связи (пунктир)
+users ..> houses : "owner_user_id"
+rooms ..> devices : "room_id"
+modules ..> devices : "module_id"
+devices ..> telemetry : "device_id"
+houses ..> scenarios : "house_id"
+@enduml

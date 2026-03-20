@@ -1,0 +1,23 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+Container_Boundary(device_service, "Device Service") {
+    Component(api, "API Layer", "Go HTTP", "Предоставляет REST интерфейс")
+    Component(device_manager, "Device Manager", "Go", "Бизнес-логика: добавление, обновление, привязка устройств к дому")
+    Component(command_sender, "Command Dispatcher", "Go", "Отправка управляющих команд в сеть или брокер устройств")
+    Component(repo, "Database Repository", "Go", "Абстракция доступа к базе данных")
+    Component(event_publisher, "Event Publisher", "Go", "Отправка событий об изменении стейта в Message Broker")
+}
+
+ContainerDb(device_db, "Device DB", "PostgreSQL", "Схема данных Device")
+Container(message_broker, "Message Broker", "Kafka", "Шина событий")
+System_Ext(devices, "Умные устройства", "Конечные устройства в домах")
+
+Rel(api, device_manager, "Вызывает методы (Сreate, Update)")
+Rel(api, command_sender, "Делегирует команду включения/выключения")
+Rel(device_manager, repo, "Сохраняет состояние")
+Rel(device_manager, event_publisher, "Формирует событие DeviceRegistered/DeviceUpdated")
+Rel(repo, device_db, "Выполняет CRUD-запросы", "SQL")
+Rel(event_publisher, message_broker, "Публикует сообщения", "TCP")
+Rel(command_sender, devices, "Отправляет сигнал", "HTTP / MQTT")
+@enduml

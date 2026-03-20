@@ -1,0 +1,40 @@
+@startuml
+participant "Датчик температуры" as Sensor
+participant "MQTT Broker\n(Mosquitto)" as MQTT
+participant "Kafka" as Kafka
+participant "Telemetry Service" as TS
+database "Telemetry DB\n(TimescaleDB)" as TDB
+participant "Automation Service" as AS
+database "Scenario DB" as SDB
+participant "Device Service" as DS
+database "Device DB" as DDB
+participant "Реле котла" as Relay
+
+== 1. Получение показания датчика ==
+Sensor -> MQTT: PUBLISH topic: devices/sensor-01/telemetry\n{ metric: "temperature", value: 29.0, unit: "°C" }
+MQTT -> Kafka: Kafka Connect / Bridge\nтопик: telemetry.reading\n{ device_id: "sensor-01", metric: "temperature", value: 29.0 }
+
+== 2. Сохранение телеметрии ==
+Kafka -> TS: Consume telemetry.reading
+TS -> TDB: INSERT INTO telemetry_data\n(device_id, metric_name, metric_value, unit, recorded_at)\nVALUES ('sensor-01', 'temperature', 29.0, '°C', NOW())
+TDB --> TS: OK
+
+== 3. Проверка сценариев ==
+Kafka -> AS: Consume telemetry.reading
+AS -> SDB: SELECT sa.* FROM scenario_actions sa\nJOIN scenarios s ON s.scenario_id = sa.scenario_id\nWHERE s.is_active = true\nAND sa.trigger_type = 'telemetry_threshold'\nAND sa.trigger_condition->>'device_id' = 'sensor-01'\nAND sa.trigger_condition->>'metric' = 'temperature'
+SDB --> AS: Правило найдено:\noperator: ">", value: 28,\naction: { device_id: "relay-01", command: "turn_off" }
+
+AS -> AS: Проверка условия:\n29.0 > 28? — ДА
+
+== 4. Выполнение действия ==
+AS -> DS: POST /devices/relay-01/command\n{ "command": "turn_off" }
+DS -> DDB: SELECT * FROM devices WHERE device_id = 'relay-01'
+DDB --> DS: Device Info (status: 'on', is_online: true)
+DS -> MQTT: PUBLISH topic: devices/relay-01/command\n{ command: "turn_off" }
+MQTT -> Relay: Deliver command "turn_off"
+Relay --> MQTT: ACK
+MQTT --> DS: ACK
+DS -> DDB: UPDATE devices SET status = 'off' WHERE device_id = 'relay-01'
+DS -> Kafka: Publish device.status-changed\n{ device_id: "relay-01", previous_status: "on", status: "off" }
+DS --> AS: 200 OK
+@enduml

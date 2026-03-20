@@ -10,12 +10,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate SVG from PlantUML
-        uses: holowczak/github-action-plantuml@v1
-        with:
-          filePattern: docs/diagrams/*.puml
-          outputDir: docs/diagrams/images
-          format: svg
+      - name: Install PlantUML
+        run: sudo apt-get install -y plantuml graphviz
+
+      - name: Generate SVG diagrams
+        run: |
+          mkdir -p docs/diagrams/images
+          plantuml -tsvg -o "${{ github.workspace }}/docs/diagrams/images" docs/diagrams/*.puml
 
       - name: Commit generated SVGs
         uses: stefanzweifel/git-auto-commit-action@v5

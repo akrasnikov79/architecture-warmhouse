@@ -107,6 +107,7 @@ System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
     Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
     ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
 
+    Container(mqtt_broker, "MQTT Broker", "Mosquitto", "Приём данных от IoT-устройств и отправка команд на них")
     Container(message_broker, "Message Broker", "Kafka", "Асинхронная передача событий между сервисами")
 }
 
@@ -127,11 +128,12 @@ Rel(device_service, device_db, "Чтение/запись", "SQL")
 Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
 Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
 
-Rel(devices, message_broker, "Отправка телеметрии и статусов", "MQTT")
+Rel(devices, mqtt_broker, "Отправка телеметрии и статусов", "MQTT")
+Rel(device_service, mqtt_broker, "Отправка команд на устройства", "MQTT")
+Rel(mqtt_broker, message_broker, "Пересылка событий от устройств", "Kafka Connect / Bridge")
 Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "Kafka")
-Rel(telemetry_service, message_broker, "Слушает события, генерирует триггеры", "Kafka")
+Rel(telemetry_service, message_broker, "Слушает события телеметрии", "Kafka")
 Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "Kafka")
-Rel(device_service, devices, "Отправка команд", "MQTT")
 @enduml
 ```
 
@@ -195,7 +197,8 @@ GW --> User: 200 OK
 ```plantuml
 @startuml
 participant "Датчик температуры" as Sensor
-participant "Message Broker\n(Kafka)" as Kafka
+participant "MQTT Broker\n(Mosquitto)" as MQTT
+participant "Kafka" as Kafka
 participant "Telemetry Service" as TS
 database "Telemetry DB\n(TimescaleDB)" as TDB
 participant "Automation Service" as AS
@@ -205,7 +208,8 @@ database "Device DB" as DDB
 participant "Реле котла" as Relay
 
 == 1. Получение показания датчика ==
-Sensor -> Kafka: MQTT: telemetry.reading\n{ device_id: "sensor-01", metric: "temperature", value: 29.0 }
+Sensor -> MQTT: PUBLISH topic: devices/sensor-01/telemetry\n{ metric: "temperature", value: 29.0, unit: "°C" }
+MQTT -> Kafka: Kafka Connect / Bridge\nтопик: telemetry.reading\n{ device_id: "sensor-01", metric: "temperature", value: 29.0 }
 
 == 2. Сохранение телеметрии ==
 Kafka -> TS: Consume telemetry.reading
@@ -223,8 +227,10 @@ AS -> AS: Проверка условия:\n29.0 > 28? — ДА
 AS -> DS: POST /devices/relay-01/command\n{ "command": "turn_off" }
 DS -> DDB: SELECT * FROM devices WHERE device_id = 'relay-01'
 DDB --> DS: Device Info (status: 'on', is_online: true)
-DS -> Relay: Send command "turn_off" (MQTT)
-Relay --> DS: ACK
+DS -> MQTT: PUBLISH topic: devices/relay-01/command\n{ command: "turn_off" }
+MQTT -> Relay: Deliver command "turn_off"
+Relay --> MQTT: ACK
+MQTT --> DS: ACK
 DS -> DDB: UPDATE devices SET status = 'off' WHERE device_id = 'relay-01'
 DS -> Kafka: Publish device.status-changed\n{ device_id: "relay-01", previous_status: "on", status: "off" }
 DS --> AS: 200 OK

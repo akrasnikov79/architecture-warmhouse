@@ -189,94 +189,197 @@ GW --> User: 200 OK
 @enduml
 ```
 
-# Задание 3. Разработка ER-диаграммы
+**Диаграмма последовательности для автоматического срабатывания сценария**
+Пример: датчик температуры фиксирует 29°C, что превышает порог 28°C в сценарии — система автоматически выключает котёл.
 
 ```plantuml
 @startuml
-entity "User" as user {
-  * user_id : uuid <<PK>>
-  --
-  email : varchar
-  password_hash : varchar
-  created_at : timestamp
+participant "Датчик температуры" as Sensor
+participant "Message Broker\n(Kafka)" as Kafka
+participant "Telemetry Service" as TS
+database "Telemetry DB\n(TimescaleDB)" as TDB
+participant "Automation Service" as AS
+database "Scenario DB" as SDB
+participant "Device Service" as DS
+database "Device DB" as DDB
+participant "Реле котла" as Relay
+
+== 1. Получение показания датчика ==
+Sensor -> Kafka: MQTT: telemetry.reading\n{ device_id: "sensor-01", metric: "temperature", value: 29.0 }
+
+== 2. Сохранение телеметрии ==
+Kafka -> TS: Consume telemetry.reading
+TS -> TDB: INSERT INTO telemetry_data\n(device_id, metric_name, metric_value, unit, recorded_at)\nVALUES ('sensor-01', 'temperature', 29.0, '°C', NOW())
+TDB --> TS: OK
+
+== 3. Проверка сценариев ==
+Kafka -> AS: Consume telemetry.reading
+AS -> SDB: SELECT sa.* FROM scenario_actions sa\nJOIN scenarios s ON s.scenario_id = sa.scenario_id\nWHERE s.is_active = true\nAND sa.trigger_type = 'telemetry_threshold'\nAND sa.trigger_condition->>'device_id' = 'sensor-01'\nAND sa.trigger_condition->>'metric' = 'temperature'
+SDB --> AS: Правило найдено:\noperator: ">", value: 28,\naction: { device_id: "relay-01", command: "turn_off" }
+
+AS -> AS: Проверка условия:\n29.0 > 28? — ДА
+
+== 4. Выполнение действия ==
+AS -> DS: POST /devices/relay-01/command\n{ "command": "turn_off" }
+DS -> DDB: SELECT * FROM devices WHERE device_id = 'relay-01'
+DDB --> DS: Device Info (status: 'on', is_online: true)
+DS -> Relay: Send command "turn_off" (MQTT)
+Relay --> DS: ACK
+DS -> DDB: UPDATE devices SET status = 'off' WHERE device_id = 'relay-01'
+DS -> Kafka: Publish device.status-changed\n{ device_id: "relay-01", previous_status: "on", status: "off" }
+DS --> AS: 200 OK
+@enduml
+```
+
+# Задание 3. Разработка ER-диаграммы
+
+В целевой архитектуре применяется паттерн **Database per Service** — каждый микросервис владеет собственной базой данных. Между контекстами нет внешних ключей (FK); связь осуществляется через логические ссылки по ID и обеспечивается согласованность на уровне приложений (eventual consistency).
+
+```plantuml
+@startuml
+skinparam packageStyle rectangle
+
+package "User DB (User & Auth Service)" as user_ctx #E8F5E9 {
+  entity "users" as users {
+    * user_id : uuid <<PK>>
+    --
+    email : varchar <<unique>>
+    password_hash : varchar
+    role_id : int <<FK>>
+    created_at : timestamptz
+  }
+
+  entity "roles" as roles {
+    * role_id : serial <<PK>>
+    --
+    name : varchar <<unique>>
+    description : varchar
+  }
+
+  entity "refresh_tokens" as tokens {
+    * token_id : uuid <<PK>>
+    --
+    user_id : uuid <<FK>>
+    token_hash : varchar
+    expires_at : timestamptz
+    created_at : timestamptz
+  }
+
+  users }o--|| roles : "Имеет роль"
+  users ||--o{ tokens : "Имеет токены"
 }
 
-entity "House" as house {
-  * house_id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  name : varchar
-  address : varchar
+package "Home DB (Home Management Service)" as home_ctx #E3F2FD {
+  entity "houses" as houses {
+    * house_id : uuid <<PK>>
+    --
+    owner_user_id : uuid
+    name : varchar
+    address : varchar
+    created_at : timestamptz
+  }
+  note right of houses::owner_user_id
+    Логическая ссылка
+    на User Service
+  end note
+
+  entity "rooms" as rooms {
+    * room_id : uuid <<PK>>
+    --
+    house_id : uuid <<FK>>
+    name : varchar
+    floor : int
+  }
+
+  entity "modules" as modules {
+    * module_id : uuid <<PK>>
+    --
+    house_id : uuid <<FK>>
+    serial_number : varchar <<unique>>
+    firmware_version : varchar
+    status : varchar
+    ip_address : varchar
+  }
+
+  houses ||--o{ rooms : "Содержит"
+  houses ||--o{ modules : "Установлен"
 }
 
-entity "Room" as room {
-  * room_id : uuid <<PK>>
-  --
-  house_id : uuid <<FK>>
-  name : varchar
-  floor : int
+package "Device DB (Device Service)" as device_ctx #FFF3E0 {
+  entity "device_types" as dev_types {
+    * type_id : serial <<PK>>
+    --
+    name : varchar
+    description : varchar
+    protocol : varchar
+  }
+
+  entity "devices" as devices {
+    * device_id : uuid <<PK>>
+    --
+    room_id : uuid
+    module_id : uuid
+    type_id : int <<FK>>
+    serial_number : varchar <<unique>>
+    name : varchar
+    status : varchar
+    is_online : boolean
+    last_seen_at : timestamptz
+  }
+  note right of devices::room_id
+    Логическая ссылка
+    на Home Service
+  end note
+
+  devices }o--|| dev_types : "Имеет тип"
 }
 
-entity "Module" as module {
-  * module_id : uuid <<PK>>
-  --
-  house_id : uuid <<FK>>
-  serial_number : varchar
-  firmware_version : varchar
-  status : varchar
-  ip_address : varchar
+package "Telemetry DB (Telemetry Service) — TimescaleDB" as telemetry_ctx #F3E5F5 {
+  entity "telemetry_data" as telemetry {
+    * recorded_at : timestamptz <<PK>>
+    * device_id : uuid <<PK>>
+    --
+    metric_name : varchar
+    metric_value : double precision
+    unit : varchar
+  }
+  note bottom of telemetry
+    Hypertable (TimescaleDB)
+    Партиционирование по recorded_at
+  end note
 }
 
-entity "DeviceType" as dev_type {
-  * type_id : int <<PK>>
-  --
-  name : varchar
-  description : varchar
-  protocol : varchar
+package "Scenario DB (Automation Service)" as scenario_ctx #FFEBEE {
+  entity "scenarios" as scenarios {
+    * scenario_id : uuid <<PK>>
+    --
+    house_id : uuid
+    name : varchar
+    description : text
+    is_active : boolean
+    created_at : timestamptz
+  }
+
+  entity "scenario_actions" as actions {
+    * action_id : uuid <<PK>>
+    --
+    scenario_id : uuid <<FK>>
+    trigger_type : varchar
+    trigger_condition : jsonb
+    action_type : varchar
+    action_payload : jsonb
+    order_index : int
+  }
+
+  scenarios ||--o{ actions : "Содержит действия"
 }
 
-entity "Device" as device {
-  * device_id : uuid <<PK>>
-  --
-  room_id : uuid <<FK>>
-  module_id : uuid <<FK>>
-  type_id : int <<FK>>
-  serial_number : varchar
-  status : varchar
-  name : varchar
-  is_online : boolean
-}
-
-entity "TelemetryData" as telemetry {
-  * telemetry_id : uuid <<PK>>
-  --
-  device_id : uuid <<FK>>
-  metric_name : varchar
-  metric_value : float
-  unit : varchar
-  recorded_at : timestamp
-}
-
-entity "Scenario" as scenario {
-  * scenario_id : uuid <<PK>>
-  --
-  house_id : uuid <<FK>>
-  name : varchar
-  description : text
-  trigger_condition : jsonb
-  action : jsonb
-  is_active : boolean
-  created_at : timestamp
-}
-
-user ||--o{ house : "Владеет"
-house ||--o{ room : "Содержит комнаты"
-house ||--o{ module : "Установлен в доме"
-house ||--o{ scenario : "Имеет сценарии"
-room ||--o{ device : "Содержит устройства"
-module ||--o{ device : "Подключено к модулю"
-device }o--|| dev_type : "Имеет тип"
-device ||--o{ telemetry : "Генерирует"
+' Межсервисные логические связи (пунктир)
+users ..> houses : "owner_user_id"
+rooms ..> devices : "room_id"
+modules ..> devices : "module_id"
+devices ..> telemetry : "device_id"
+houses ..> scenarios : "house_id"
 @enduml
 ```
 

@@ -2,11 +2,18 @@
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 Person(user, "Пользователь", "Покупает устройства SaaS и управляет домом")
+System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
 
 System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
-    Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
-    Container(api_gateway, "API Gateway", "Go", "Единая точка входа, авторизация, маршрутизация")
 
+    ' --- Маршрутизация ---
+    Container(api_gateway, "API Gateway", "Nginx", "Единая точка входа, маршрутизация")
+
+    ' --- Клиент и IoT-брокер ---
+    Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
+    Container(mqtt_broker, "MQTT Broker", "Mosquitto", "Приём данных от IoT-устройств и отправка команд на них")
+
+    ' --- Микросервисы ---
     Container(user_service, "User & Auth Service", "Go", "Управление пользователями, аутентификация, авторизация, JWT")
     ContainerDb(user_db, "User DB", "PostgreSQL", "Профили пользователей, роли, токены")
 
@@ -22,30 +29,36 @@ System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
     Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
     ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
 
-    Container(mqtt_broker, "MQTT Broker", "Mosquitto", "Приём данных от IoT-устройств и отправка команд на них")
+    ' --- Шина событий ---
     Container(message_broker, "Message Broker", "Kafka", "Асинхронная передача событий между сервисами")
 }
 
-System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
+' Пользователь / Устройства → Nginx
+Rel(user, api_gateway, "Обращается к системе", "HTTPS")
+Rel(devices, api_gateway, "Отправка телеметрии и статусов", "MQTT / HTTPS")
 
-Rel(user, web_app, "Управляет экосистемой", "HTTPS")
-Rel(web_app, api_gateway, "REST API вызовы", "HTTPS")
+' Nginx → Web Portal, MQTT Broker
+Rel(api_gateway, web_app, "Проксирует запросы", "HTTPS")
+Rel(api_gateway, mqtt_broker, "Проксирование IoT-трафика", "MQTT")
 
-Rel(api_gateway, user_service, "Аутентификация / авторизация", "REST")
-Rel(api_gateway, home_service, "Управление домами", "REST")
-Rel(api_gateway, device_service, "Управление устройствами", "REST")
-Rel(api_gateway, telemetry_service, "Получение истории", "REST")
-Rel(api_gateway, scenario_service, "Настройка правил", "REST")
+' MQTT Broker → Kafka
+Rel(mqtt_broker, message_broker, "Пересылка событий от устройств", "Kafka Connect / Bridge")
 
+' Web Portal → все микросервисы
+Rel(web_app, user_service, "Авторизация, профиль", "REST")
+Rel(web_app, home_service, "Управление домами", "REST")
+Rel(web_app, device_service, "Управление устройствами", "REST")
+Rel(web_app, telemetry_service, "Просмотр телеметрии", "REST")
+Rel(web_app, scenario_service, "Настройка сценариев", "REST")
+
+' Микросервисы → БД
 Rel(user_service, user_db, "Чтение/запись", "SQL")
 Rel(home_service, home_db, "Чтение/запись", "SQL")
 Rel(device_service, device_db, "Чтение/запись", "SQL")
 Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
 Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
 
-Rel(devices, mqtt_broker, "Отправка телеметрии и статусов", "MQTT")
-Rel(device_service, mqtt_broker, "Отправка команд на устройства", "MQTT")
-Rel(mqtt_broker, message_broker, "Пересылка событий от устройств", "Kafka Connect / Bridge")
+' Микросервисы → Kafka
 Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "Kafka")
 Rel(telemetry_service, message_broker, "Слушает события телеметрии", "Kafka")
 Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "Kafka")

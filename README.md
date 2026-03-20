@@ -48,16 +48,39 @@
 
 Person(user, "Пользователь", "Владелец умного дома")
 System(warmhouse, "Система «Тёплый дом» (Монолит)", "Обеспечивает управление отоплением и мониторинг температуры")
+System_Ext(web_client, "Веб-клиент", "SPA в браузере пользователя для управления экосистемой")
 System_Ext(sensors, "Датчики и реле", "Устройства, установленные в домах (температурные датчики, реле котла)")
 
-Rel(user, warmhouse, "Просматривает температуру, включает/выключает отопление", "HTTP")
+Rel(user, web_client, "Взаимодействует через браузер", "HTTPS")
+Rel(web_client, warmhouse, "Просматривает температуру, управляет отоплением", "HTTP/REST")
 Rel(warmhouse, sensors, "Опрашивает термометры, отправляет команды на реле", "Синхронные запросы")
 @enduml
 ```
 
 # Задание 2. Проектирование микросервисной архитектуры
 
-**Диаграмма контейнеров (Containers)**
+**Диаграмма контейнеров As-Is (текущее состояние)**
+
+```plantuml
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user, "Пользователь", "Владелец дома с подключённым отоплением")
+
+System_Boundary(current, "Текущая система «Тёплый дом» (As-Is)") {
+    Container(monolith, "Монолитное приложение", "Go", "Обработка запросов, бизнес-логика, работа с данными — всё в одном приложении")
+    ContainerDb(postgres, "PostgreSQL", "PostgreSQL", "Единая БД для всех данных (пользователи, датчики, показания)")
+}
+
+System_Ext(sensors, "Датчики и реле", "Температурные датчики и реле котлов, установленные в домах")
+
+Rel(user, monolith, "Просматривает температуру, управляет отоплением", "HTTP")
+Rel(monolith, postgres, "Чтение/запись всех данных", "SQL")
+Rel(monolith, sensors, "Синхронный опрос датчиков и отправка команд", "HTTP")
+@enduml
+```
+
+**Диаграмма контейнеров To-Be (целевая архитектура)**
 
 ```plantuml
 @startuml
@@ -68,17 +91,23 @@ Person(user, "Пользователь", "Покупает устройства 
 System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
     Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
     Container(api_gateway, "API Gateway", "Go", "Единая точка входа, авторизация, маршрутизация")
-    
+
+    Container(user_service, "User & Auth Service", "Go", "Управление пользователями, аутентификация, авторизация, JWT")
+    ContainerDb(user_db, "User DB", "PostgreSQL", "Профили пользователей, роли, токены")
+
+    Container(home_service, "Home Management Service", "Go", "Управление домами, комнатами, группами устройств")
+    ContainerDb(home_db, "Home DB", "PostgreSQL", "Дома, комнаты, привязки")
+
     Container(device_service, "Device Service", "Go", "Управление реестром устройств, отправка команд")
-    ContainerDb(device_db, "Device DB", "PostgreSQL", "Хранение списка устройств, домов и привязок")
-    
+    ContainerDb(device_db, "Device DB", "PostgreSQL", "Хранение списка устройств и их состояний")
+
     Container(telemetry_service, "Telemetry Service", "Go", "Сбор и агрегация данных телеметрии")
     ContainerDb(telemetry_db, "Telemetry DB", "TimescaleDB", "Хранение истории показаний")
-    
+
     Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
     ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
 
-    Container(message_broker, "Message Broker", "Kafka / RabbitMQ", "Асинхронная передача событий")
+    Container(message_broker, "Message Broker", "Kafka", "Асинхронная передача событий между сервисами")
 }
 
 System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
@@ -86,19 +115,23 @@ System_Ext(devices, "Умные устройства", "Датчики, реле
 Rel(user, web_app, "Управляет экосистемой", "HTTPS")
 Rel(web_app, api_gateway, "REST API вызовы", "HTTPS")
 
+Rel(api_gateway, user_service, "Аутентификация / авторизация", "REST/gRPC")
+Rel(api_gateway, home_service, "Управление домами", "REST/gRPC")
 Rel(api_gateway, device_service, "Управление устройствами", "REST/gRPC")
 Rel(api_gateway, telemetry_service, "Получение истории", "REST/gRPC")
 Rel(api_gateway, scenario_service, "Настройка правил", "REST/gRPC")
 
+Rel(user_service, user_db, "Чтение/запись", "SQL")
+Rel(home_service, home_db, "Чтение/запись", "SQL")
 Rel(device_service, device_db, "Чтение/запись", "SQL")
 Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
 Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
 
-Rel(devices, api_gateway, "Отправка телеметрии и статусов", "HTTP(S)")
-Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "AMQP")
-Rel(telemetry_service, message_broker, "Слушает события, генерирует триггеры", "AMQP")
-Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "AMQP")
-Rel(device_service, devices, "Отправка команд", "HTTP(S) / MQTT")
+Rel(devices, message_broker, "Отправка телеметрии и статусов", "MQTT")
+Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "Kafka")
+Rel(telemetry_service, message_broker, "Слушает события, генерирует триггеры", "Kafka")
+Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "Kafka")
+Rel(device_service, devices, "Отправка команд", "MQTT")
 @enduml
 ```
 
@@ -176,6 +209,24 @@ entity "House" as house {
   address : varchar
 }
 
+entity "Room" as room {
+  * room_id : uuid <<PK>>
+  --
+  house_id : uuid <<FK>>
+  name : varchar
+  floor : int
+}
+
+entity "Module" as module {
+  * module_id : uuid <<PK>>
+  --
+  house_id : uuid <<FK>>
+  serial_number : varchar
+  firmware_version : varchar
+  status : varchar
+  ip_address : varchar
+}
+
 entity "DeviceType" as dev_type {
   * type_id : int <<PK>>
   --
@@ -187,7 +238,8 @@ entity "DeviceType" as dev_type {
 entity "Device" as device {
   * device_id : uuid <<PK>>
   --
-  house_id : uuid <<FK>>
+  room_id : uuid <<FK>>
+  module_id : uuid <<FK>>
   type_id : int <<FK>>
   serial_number : varchar
   status : varchar
@@ -205,8 +257,24 @@ entity "TelemetryData" as telemetry {
   recorded_at : timestamp
 }
 
+entity "Scenario" as scenario {
+  * scenario_id : uuid <<PK>>
+  --
+  house_id : uuid <<FK>>
+  name : varchar
+  description : text
+  trigger_condition : jsonb
+  action : jsonb
+  is_active : boolean
+  created_at : timestamp
+}
+
 user ||--o{ house : "Владеет"
-house ||--o{ device : "Содержит"
+house ||--o{ room : "Содержит комнаты"
+house ||--o{ module : "Установлен в доме"
+house ||--o{ scenario : "Имеет сценарии"
+room ||--o{ device : "Содержит устройства"
+module ||--o{ device : "Подключено к модулю"
 device }o--|| dev_type : "Имеет тип"
 device ||--o{ telemetry : "Генерирует"
 @enduml
@@ -218,16 +286,142 @@ device ||--o{ telemetry : "Генерирует"
 
 Основой взаимодействия между фронтендом (или API Gateway) и микросервисами для синхронных запросов (управление, получение состояния, настройка) будет **REST API**. Он оптимально подходит для CRUD-операций и сценариев, когда инициатор должен немедленно узнать результат (например, была ли применена команда включения). Для сбора потоковых данных с датчиков (телеметрия) внутри системы оптимально применять **событийную модель с использованием Message Broker (Kafka)** или протокол **MQTT**, однако публичный контракт для внешних клиентов для управления будет строиться на REST через JSON.
 
-### 2. Документация API
+Для асинхронного взаимодействия (события телеметрии, уведомления о смене статуса устройств) используется **AsyncAPI** — контракт для событий, передаваемых через Message Broker (Kafka).
 
-Ниже представлен контракт REST API (в формате OpenAPI 3.0) для взаимодействия с Device Service.
+### 2. Документация REST API (OpenAPI 3.0)
+
+Ниже представлен контракт REST API для взаимодействия с Device Service — 5 эндпоинтов.
 
 ```yaml
 openapi: 3.0.0
 info:
   title: Экосистема Тёплый Дом - Device API
   version: 1.0.0
+  description: REST API для управления устройствами умного дома
+
 paths:
+  /devices:
+    get:
+      summary: Получение списка устройств
+      description: Возвращает список устройств с возможностью фильтрации по дому и пагинацией
+      parameters:
+        - name: house_id
+          in: query
+          required: false
+          description: Фильтр по идентификатору дома
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Список устройств
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+              examples:
+                success:
+                  summary: Пример успешного ответа
+                  value:
+                    items:
+                      - id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                        house_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        name: "Термодатчик гостиная"
+                        serial_number: "SN-TEMP-001"
+                        status: "on"
+                        is_online: true
+                        type_id: 1
+                      - id: "b23dc10b-77aa-4372-b890-1e02b2c3d480"
+                        house_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        name: "Реле отопления"
+                        serial_number: "SN-RELAY-002"
+                        status: "off"
+                        is_online: true
+                        type_id: 2
+                    total: 2
+                    page: 1
+                    limit: 20
+        '401':
+          description: Не авторизован
+
+    post:
+      summary: Регистрация нового устройства
+      description: Добавляет новое устройство в систему и привязывает его к дому
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - house_id
+                - name
+                - type_id
+                - serial_number
+              properties:
+                house_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                type_id:
+                  type: integer
+                serial_number:
+                  type: string
+            examples:
+              temperature_sensor:
+                summary: Регистрация температурного датчика
+                value:
+                  house_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  name: "Термодатчик кухня"
+                  type_id: 1
+                  serial_number: "SN-TEMP-003"
+      responses:
+        '201':
+          description: Устройство успешно зарегистрировано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              examples:
+                created:
+                  summary: Пример созданного устройства
+                  value:
+                    id: "c34ed20c-88bb-4483-c901-2f13c3d4e591"
+                    house_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    name: "Термодатчик кухня"
+                    serial_number: "SN-TEMP-003"
+                    status: "inactive"
+                    is_online: false
+                    type_id: 1
+        '400':
+          description: Неверный формат запроса
+        '409':
+          description: Устройство с таким serial_number уже существует
+
   /devices/{deviceId}:
     get:
       summary: Получение подробной информации об устройстве
@@ -245,12 +439,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Device'
+              examples:
+                success:
+                  summary: Пример устройства
+                  value:
+                    id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    house_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    name: "Термодатчик гостиная"
+                    serial_number: "SN-TEMP-001"
+                    status: "on"
+                    is_online: true
+                    type_id: 1
         '404':
           description: Устройство не найдено
 
   /devices/{deviceId}/status:
     put:
-      summary: Обновление состояния устройства (обычно используется самим устройством для heartbeats)
+      summary: Обновление состояния устройства
+      description: Используется устройством для heartbeat или оператором для ручного изменения статуса
       parameters:
         - name: deviceId
           in: path
@@ -267,17 +473,40 @@ paths:
               properties:
                 status:
                   type: string
+                  enum: [on, off, error, maintenance]
                 is_online:
                   type: boolean
+            examples:
+              heartbeat:
+                summary: Heartbeat от устройства
+                value:
+                  status: "on"
+                  is_online: true
+              maintenance:
+                summary: Перевод в режим обслуживания
+                value:
+                  status: "maintenance"
+                  is_online: true
       responses:
         '200':
           description: Статус успешно обновлен
+          content:
+            application/json:
+              examples:
+                success:
+                  value:
+                    message: "Status updated successfully"
+                    device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    status: "on"
         '400':
           description: Неверный формат запроса
+        '404':
+          description: Устройство не найдено
 
   /devices/{deviceId}/command:
     post:
       summary: Отправка управляющей команды на устройство
+      description: Отправляет команду (включить, выключить, задать параметры) на физическое устройство
       parameters:
         - name: deviceId
           in: path
@@ -291,20 +520,52 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - command
               properties:
                 command:
                   type: string
-                  example: "turn_on"
+                  enum: [turn_on, turn_off, set_temperature, lock, unlock]
                 params:
                   type: object
-                  example: {"temperature_target": 24}
+                  additionalProperties: true
+            examples:
+              turn_on:
+                summary: Включение устройства
+                value:
+                  command: "turn_on"
+                  params: {}
+              set_temperature:
+                summary: Установка целевой температуры
+                value:
+                  command: "set_temperature"
+                  params:
+                    temperature_target: 24
       responses:
         '200':
           description: Команда успешно отправлена и обработана устройством
+          content:
+            application/json:
+              examples:
+                success:
+                  value:
+                    message: "Command executed successfully"
+                    device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    command: "turn_on"
+                    result: "ok"
         '403':
           description: Нет доступа к устройству
+        '404':
+          description: Устройство не найдено
         '500':
           description: Ошибка связи с физическим устройством или таймаут
+          content:
+            application/json:
+              examples:
+                timeout:
+                  value:
+                    error: "Device communication timeout"
+                    device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
 components:
   schemas:
@@ -319,12 +580,103 @@ components:
           format: uuid
         name:
           type: string
+        serial_number:
+          type: string
         status:
           type: string
+          enum: [on, off, inactive, error, maintenance]
         is_online:
           type: boolean
         type_id:
           type: integer
+```
+
+### 3. Документация AsyncAPI (асинхронное взаимодействие)
+
+Для событийного взаимодействия между микросервисами через Message Broker (Kafka) используется AsyncAPI.
+
+```yaml
+asyncapi: 2.6.0
+info:
+  title: Экосистема Тёплый Дом - Async Events
+  version: 1.0.0
+  description: Асинхронные события экосистемы умного дома, передаваемые через Kafka
+
+servers:
+  production:
+    url: kafka:9092
+    protocol: kafka
+
+channels:
+  device.status-changed:
+    description: Событие при изменении статуса устройства (включение, выключение, ошибка)
+    publish:
+      summary: Публикация события смены статуса устройства
+      operationId: onDeviceStatusChanged
+      message:
+        payload:
+          type: object
+          required:
+            - device_id
+            - status
+            - timestamp
+          properties:
+            device_id:
+              type: string
+              format: uuid
+            previous_status:
+              type: string
+              enum: [on, off, inactive, error]
+            status:
+              type: string
+              enum: [on, off, inactive, error]
+            timestamp:
+              type: string
+              format: date-time
+        examples:
+          - payload:
+              device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+              previous_status: "off"
+              status: "on"
+              timestamp: "2025-01-15T10:30:00Z"
+
+  telemetry.reading:
+    description: Новое показание телеметрии от датчика
+    publish:
+      summary: Публикация данных телеметрии
+      operationId: onTelemetryReading
+      message:
+        payload:
+          type: object
+          required:
+            - device_id
+            - metric_name
+            - value
+            - recorded_at
+          properties:
+            device_id:
+              type: string
+              format: uuid
+            metric_name:
+              type: string
+              example: "temperature"
+            value:
+              type: number
+              format: double
+              example: 22.5
+            unit:
+              type: string
+              example: "°C"
+            recorded_at:
+              type: string
+              format: date-time
+        examples:
+          - payload:
+              device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+              metric_name: "temperature"
+              value: 22.5
+              unit: "°C"
+              recorded_at: "2025-01-15T10:30:00Z"
 ```
 
 # Задание 5. Работа с docker и docker-compose

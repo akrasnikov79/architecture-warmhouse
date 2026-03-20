@@ -4,22 +4,15 @@ on:
   push:
 
 jobs:
-  build:
+  generate_plantuml:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install PlantUML
-        run: sudo apt-get install -y plantuml graphviz
-
-      - name: Generate SVG diagrams
-        run: |
-          mkdir -p docs/diagrams/images
-          plantuml -tsvg -o "${{ github.workspace }}/docs/diagrams/images" docs/diagrams/*.puml
-
-      - name: Commit generated SVGs
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - uses: grassedge/generate-plantuml-action@v1.5
         with:
-          commit_message: "ci: regenerate PlantUML diagrams [skip ci]"
-          file_pattern: docs/diagrams/images/*.svg
+          path: docs/diagrams/images
+          message: "ci: regenerate PlantUML diagrams [skip ci]"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

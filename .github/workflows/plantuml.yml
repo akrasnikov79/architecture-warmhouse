@@ -2,6 +2,10 @@ name: Generate PlantUML diagrams
 
 on:
   push:
+    paths:
+      - 'docs/diagrams/**.puml'
+      - 'docs/specifications/**'
+      - '.github/workflows/plantuml.yml'
 
 jobs:
   generate_plantuml:
@@ -11,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: grassedge/generate-plantuml-action@v1.5
         with:

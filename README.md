@@ -63,14 +63,8 @@
 
 [Исходник (.puml)](docs/diagrams/04-component-device-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/04-component-device-warmhouse.svg)
 
-**Диаграмма кода (Code)** 
-Диаграмма последовательности для успешного выполнения команды включения реле-устройства.
-
-
-[Исходник (.puml)](docs/diagrams/05-sequence-relay-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/05-sequence-relay-warmhouse.svg)
-
-**Диаграмма последовательности для автоматического срабатывания сценария**
-Пример: датчик температуры фиксирует 29°C, что превышает порог 28°C в сценарии — система автоматически выключает котёл.
+**Диаграмма кода (Code)**
+Диаграмма последовательности автоматического срабатывания сценария. Пример: датчик температуры фиксирует 29°C, что превышает порог 28°C в сценарии — система автоматически выключает котёл.
 
 
 [Исходник (.puml)](docs/diagrams/06-sequence-automation-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/06-sequence-automation-warmhouse.svg)

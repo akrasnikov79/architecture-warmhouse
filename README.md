@@ -42,175 +42,39 @@
 
 ### 5. Визуализация контекста системы — диаграмма С4
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-Person(user, "Пользователь", "Владелец умного дома")
-System(warmhouse, "Система «Тёплый дом» (Монолит)", "Обеспечивает управление отоплением и мониторинг температуры")
-System_Ext(sensors, "Датчики и реле", "Устройства, установленные в домах (температурные датчики, реле котла)")
-
-Rel(user, warmhouse, "Просматривает температуру, включает/выключает отопление", "HTTP")
-Rel(warmhouse, sensors, "Опрашивает термометры, отправляет команды на реле", "Синхронные запросы")
-@enduml
-```
+[Исходник (.puml)](docs/diagrams/01-context-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/01-context-warmhouse.svg)
 
 # Задание 2. Проектирование микросервисной архитектуры
 
-**Диаграмма контейнеров (Containers)**
+**Диаграмма контейнеров As-Is (текущее состояние)**
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
-Person(user, "Пользователь", "Покупает устройства SaaS и управляет домом")
+[Исходник (.puml)](docs/diagrams/02-container-asis-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/02-container-asis-warmhouse.svg)
 
-System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
-    Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
-    Container(api_gateway, "API Gateway", "Go", "Единая точка входа, авторизация, маршрутизация")
-    
-    Container(device_service, "Device Service", "Go", "Управление реестром устройств, отправка команд")
-    ContainerDb(device_db, "Device DB", "PostgreSQL", "Хранение списка устройств, домов и привязок")
-    
-    Container(telemetry_service, "Telemetry Service", "Go", "Сбор и агрегация данных телеметрии")
-    ContainerDb(telemetry_db, "Telemetry DB", "TimescaleDB", "Хранение истории показаний")
-    
-    Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
-    ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
+**Диаграмма контейнеров To-Be (целевая архитектура)**
 
-    Container(message_broker, "Message Broker", "Kafka / RabbitMQ", "Асинхронная передача событий")
-}
 
-System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
-
-Rel(user, web_app, "Управляет экосистемой", "HTTPS")
-Rel(web_app, api_gateway, "REST API вызовы", "HTTPS")
-
-Rel(api_gateway, device_service, "Управление устройствами", "REST/gRPC")
-Rel(api_gateway, telemetry_service, "Получение истории", "REST/gRPC")
-Rel(api_gateway, scenario_service, "Настройка правил", "REST/gRPC")
-
-Rel(device_service, device_db, "Чтение/запись", "SQL")
-Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
-Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
-
-Rel(devices, api_gateway, "Отправка телеметрии и статусов", "HTTP(S)")
-Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "AMQP")
-Rel(telemetry_service, message_broker, "Слушает события, генерирует триггеры", "AMQP")
-Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "AMQP")
-Rel(device_service, devices, "Отправка команд", "HTTP(S) / MQTT")
-@enduml
-```
+[Исходник (.puml)](docs/diagrams/03-container-tobe-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/03-container-tobe-warmhouse.svg)
 
 **Диаграмма компонентов (Components)**
 Для микросервиса *Device Service* (Управление устройствами)
 
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
-Container_Boundary(device_service, "Device Service") {
-    Component(api, "API Layer", "Go HTTP/gRPC", "Предоставляет REST/gRPC интерфейс")
-    Component(device_manager, "Device Manager", "Go", "Бизнес-логика: добавление, обновление, привязка устройств к дому")
-    Component(command_sender, "Command Dispatcher", "Go", "Отправка управляющих команд в сеть или брокер устройств")
-    Component(repo, "Database Repository", "Go", "Абстракция доступа к базе данных")
-    Component(event_publisher, "Event Publisher", "Go", "Отправка событий об изменении стейта в Message Broker")
-}
+[Исходник (.puml)](docs/diagrams/04-component-device-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/04-component-device-warmhouse.svg)
 
-ContainerDb(device_db, "Device DB", "PostgreSQL", "Схема данных Device")
-Container(message_broker, "Message Broker", "Kafka", "Шина событий")
-System_Ext(devices, "Умные устройства", "Конечные устройства в домах")
+**Диаграмма кода (Code)**
+Диаграмма последовательности автоматического срабатывания сценария. Пример: датчик температуры фиксирует 29°C, что превышает порог 28°C в сценарии — система автоматически выключает котёл.
 
-Rel(api, device_manager, "Вызывает методы (Сreate, Update)")
-Rel(api, command_sender, "Делегирует команду включения/выключения")
-Rel(device_manager, repo, "Сохраняет состояние")
-Rel(device_manager, event_publisher, "Формирует событие DeviceRegistered/DeviceUpdated")
-Rel(repo, device_db, "Выполняет CRUD-запросы", "SQL")
-Rel(event_publisher, message_broker, "Публикует сообщения", "TCP")
-Rel(command_sender, devices, "Отправляет сигнал", "HTTP / MQTT")
-@enduml
-```
 
-**Диаграмма кода (Code)** 
-Диаграмма последовательности для успешного выполнения команды включения реле-устройства.
-
-```plantuml
-@startuml
-actor User
-participant "API Gateway" as GW
-participant "Device Service" as DS
-database "Device DB" as DB
-participant "Message Broker" as Kafka
-participant "Heating Relay" as Relay
-
-User -> GW: POST /devices/{id}/commands \n { "action": "turn_on" }
-GW -> DS: Forward Request
-DS -> DB: SELECT device FROM devices WHERE id={id}
-DB --> DS: Device Info & Status
-DS -> Relay: Send action "turn_on" (HTTP/MQTT)
-Relay --> DS: OK
-DS -> DB: UPDATE devices SET status='on' WHERE id={id}
-DS -> Kafka: Publish "DeviceStatusChanged" {status: on}
-DS --> GW: 200 OK
-GW --> User: 200 OK
-@enduml
-```
+[Исходник (.puml)](docs/diagrams/06-sequence-automation-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/06-sequence-automation-warmhouse.svg)
 
 # Задание 3. Разработка ER-диаграммы
 
-```plantuml
-@startuml
-entity "User" as user {
-  * user_id : uuid <<PK>>
-  --
-  email : varchar
-  password_hash : varchar
-  created_at : timestamp
-}
+В целевой архитектуре применяется паттерн **Database per Service** — каждый микросервис владеет собственной базой данных. Между контекстами нет внешних ключей (FK); связь осуществляется через логические ссылки по ID и обеспечивается согласованность на уровне приложений (eventual consistency).
 
-entity "House" as house {
-  * house_id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  name : varchar
-  address : varchar
-}
 
-entity "DeviceType" as dev_type {
-  * type_id : int <<PK>>
-  --
-  name : varchar
-  description : varchar
-  protocol : varchar
-}
-
-entity "Device" as device {
-  * device_id : uuid <<PK>>
-  --
-  house_id : uuid <<FK>>
-  type_id : int <<FK>>
-  serial_number : varchar
-  status : varchar
-  name : varchar
-  is_online : boolean
-}
-
-entity "TelemetryData" as telemetry {
-  * telemetry_id : uuid <<PK>>
-  --
-  device_id : uuid <<FK>>
-  metric_name : varchar
-  metric_value : float
-  unit : varchar
-  recorded_at : timestamp
-}
-
-user ||--o{ house : "Владеет"
-house ||--o{ device : "Содержит"
-device }o--|| dev_type : "Имеет тип"
-device ||--o{ telemetry : "Генерирует"
-@enduml
-```
+[Исходник (.puml)](docs/diagrams/07-er-diagram-warmhouse.puml) | [Открыть SVG](docs/diagrams/images/07-er-diagram-warmhouse.svg)
 
 # Задание 4. Создание и документирование API
 
@@ -218,114 +82,23 @@ device ||--o{ telemetry : "Генерирует"
 
 Основой взаимодействия между фронтендом (или API Gateway) и микросервисами для синхронных запросов (управление, получение состояния, настройка) будет **REST API**. Он оптимально подходит для CRUD-операций и сценариев, когда инициатор должен немедленно узнать результат (например, была ли применена команда включения). Для сбора потоковых данных с датчиков (телеметрия) внутри системы оптимально применять **событийную модель с использованием Message Broker (Kafka)** или протокол **MQTT**, однако публичный контракт для внешних клиентов для управления будет строиться на REST через JSON.
 
-### 2. Документация API
+Для асинхронного взаимодействия (события телеметрии, уведомления о смене статуса устройств) используется **AsyncAPI** — контракт для событий, передаваемых через Message Broker (Kafka).
 
-Ниже представлен контракт REST API (в формате OpenAPI 3.0) для взаимодействия с Device Service.
+### 2. Документация REST API (OpenAPI 3.0)
 
-```yaml
-openapi: 3.0.0
-info:
-  title: Экосистема Тёплый Дом - Device API
-  version: 1.0.0
-paths:
-  /devices/{deviceId}:
-    get:
-      summary: Получение подробной информации об устройстве
-      parameters:
-        - name: deviceId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Успешный ответ
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Device'
-        '404':
-          description: Устройство не найдено
+Контракт REST API для взаимодействия с Device Service — 5 эндпоинтов.
 
-  /devices/{deviceId}/status:
-    put:
-      summary: Обновление состояния устройства (обычно используется самим устройством для heartbeats)
-      parameters:
-        - name: deviceId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                is_online:
-                  type: boolean
-      responses:
-        '200':
-          description: Статус успешно обновлен
-        '400':
-          description: Неверный формат запроса
+[Открыть спецификацию (openapi-device.yaml)](docs/specifications/openapi-device.yaml)
 
-  /devices/{deviceId}/command:
-    post:
-      summary: Отправка управляющей команды на устройство
-      parameters:
-        - name: deviceId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                command:
-                  type: string
-                  example: "turn_on"
-                params:
-                  type: object
-                  example: {"temperature_target": 24}
-      responses:
-        '200':
-          description: Команда успешно отправлена и обработана устройством
-        '403':
-          description: Нет доступа к устройству
-        '500':
-          description: Ошибка связи с физическим устройством или таймаут
+### 3. Документация AsyncAPI (асинхронное взаимодействие)
 
-components:
-  schemas:
-    Device:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        house_id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        status:
-          type: string
-        is_online:
-          type: boolean
-        type_id:
-          type: integer
-```
+В системе два брокера сообщений:
+- **MQTT Broker (Mosquitto)** — принимает данные от IoT-устройств и доставляет команды на них
+- **Message Broker (Kafka)** — асинхронная шина событий между микросервисами
+
+Поток данных: `Устройство → Nginx → MQTT Broker → Kafka Connect → Kafka → Сервисы`
+
+[Открыть спецификацию (asyncapi-events.yaml)](docs/specifications/asyncapi-events.yaml)
 
 # Задание 5. Работа с docker и docker-compose
 

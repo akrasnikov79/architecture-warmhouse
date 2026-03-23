@@ -1,0 +1,16 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user, "Пользователь", "Владелец дома с подключённым отоплением")
+
+System_Boundary(current, "Текущая система «Тёплый дом» (As-Is)") {
+    Container(monolith, "Монолитное приложение", "Go", "Обработка запросов, бизнес-логика, работа с данными — всё в одном приложении")
+    ContainerDb(postgres, "PostgreSQL", "PostgreSQL", "Единая БД для всех данных (пользователи, датчики, показания)")
+}
+
+System_Ext(sensors, "Датчики и реле", "Температурные датчики и реле котлов, установленные в домах")
+
+Rel(user, monolith, "Просматривает температуру, управляет отоплением", "HTTP")
+Rel(monolith, postgres, "Чтение/запись всех данных", "SQL")
+Rel(monolith, sensors, "Синхронный опрос датчиков и отправка команд", "HTTP")
+@enduml

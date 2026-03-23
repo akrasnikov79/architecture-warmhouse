@@ -1,0 +1,230 @@
+asyncapi: 3.0.0
+info:
+  title: Экосистема Тёплый Дом - Async Events
+  version: 1.0.0
+  description: >
+    Асинхронное взаимодействие экосистемы умного дома.
+    MQTT-каналы описывают взаимодействие с IoT-устройствами через Mosquitto.
+    Kafka-каналы описывают внутреннюю шину событий между микросервисами.
+
+servers:
+  mqtt:
+    host: mosquitto:1883
+    protocol: mqtt
+    description: MQTT Broker (Mosquitto) — точка входа для IoT-устройств
+    security:
+      - $ref: '#/components/securitySchemes/mqttUserPassword'
+  kafka:
+    host: kafka:9092
+    protocol: kafka
+    description: Message Broker (Kafka) — внутренняя шина событий
+
+channels:
+
+  # ───── MQTT-каналы (Устройства ↔ MQTT Broker) ─────
+
+  deviceTelemetry:
+    address: devices/{deviceId}/telemetry
+    description: Устройство публикует показания телеметрии в MQTT Broker
+    servers:
+      - $ref: '#/servers/mqtt'
+    parameters:
+      deviceId:
+        description: UUID устройства
+    messages:
+      TelemetryMessage:
+        $ref: '#/components/messages/TelemetryMessage'
+    bindings:
+      mqtt:
+        qos: 1
+        retain: false
+
+  deviceCommand:
+    address: devices/{deviceId}/command
+    description: Device Service публикует команду управления устройством через MQTT Broker
+    servers:
+      - $ref: '#/servers/mqtt'
+    parameters:
+      deviceId:
+        description: UUID устройства
+    messages:
+      CommandMessage:
+        $ref: '#/components/messages/CommandMessage'
+    bindings:
+      mqtt:
+        qos: 1
+        retain: false
+
+  # ───── Kafka-каналы (внутренние события между сервисами) ─────
+
+  telemetryReading:
+    address: telemetry.reading
+    description: >
+      MQTT Broker пересылает телеметрию в Kafka через Kafka Connect.
+      Telemetry Service сохраняет данные, Automation Service проверяет триггеры.
+    servers:
+      - $ref: '#/servers/kafka'
+    messages:
+      TelemetryMessage:
+        $ref: '#/components/messages/TelemetryMessage'
+    bindings:
+      kafka:
+        partitions: 3
+        replicas: 1
+
+  deviceStatusChanged:
+    address: device.status-changed
+    description: >
+      Device Service публикует событие при изменении статуса устройства.
+      Automation Service потребляет для запуска сценариев.
+    servers:
+      - $ref: '#/servers/kafka'
+    messages:
+      DeviceStatusChangedMessage:
+        $ref: '#/components/messages/DeviceStatusChangedMessage'
+    bindings:
+      kafka:
+        partitions: 3
+        replicas: 1
+
+operations:
+  devicePublishTelemetry:
+    action: send
+    summary: Устройство отправляет показание датчика
+    channel:
+      $ref: '#/channels/deviceTelemetry'
+    messages:
+      - $ref: '#/channels/deviceTelemetry/messages/TelemetryMessage'
+
+  deviceReceiveCommand:
+    action: receive
+    summary: Устройство получает команду управления
+    channel:
+      $ref: '#/channels/deviceCommand'
+    messages:
+      - $ref: '#/channels/deviceCommand/messages/CommandMessage'
+
+  publishTelemetryReading:
+    action: send
+    summary: MQTT Bridge публикует показание телеметрии в Kafka
+    channel:
+      $ref: '#/channels/telemetryReading'
+    messages:
+      - $ref: '#/channels/telemetryReading/messages/TelemetryMessage'
+
+  consumeTelemetryReading:
+    action: receive
+    summary: Telemetry Service и Automation Service потребляют событие телеметрии
+    channel:
+      $ref: '#/channels/telemetryReading'
+    messages:
+      - $ref: '#/channels/telemetryReading/messages/TelemetryMessage'
+
+  publishDeviceStatusChanged:
+    action: send
+    summary: Device Service публикует смену статуса устройства
+    channel:
+      $ref: '#/channels/deviceStatusChanged'
+    messages:
+      - $ref: '#/channels/deviceStatusChanged/messages/DeviceStatusChangedMessage'
+
+  consumeDeviceStatusChanged:
+    action: receive
+    summary: Automation Service потребляет событие смены статуса
+    channel:
+      $ref: '#/channels/deviceStatusChanged'
+    messages:
+      - $ref: '#/channels/deviceStatusChanged/messages/DeviceStatusChangedMessage'
+
+components:
+  securitySchemes:
+    mqttUserPassword:
+      type: userPassword
+      description: Аутентификация MQTT-клиентов по логину и паролю
+
+  messages:
+    TelemetryMessage:
+      name: telemetry-reading
+      summary: Показание датчика телеметрии
+      payload:
+        $ref: '#/components/schemas/TelemetryPayload'
+      examples:
+        - payload:
+            device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+            metric_name: "temperature"
+            value: 29.0
+            unit: "°C"
+            recorded_at: "2025-01-15T10:30:00Z"
+
+    CommandMessage:
+      name: device-command
+      summary: Команда управления устройством
+      payload:
+        $ref: '#/components/schemas/CommandPayload'
+      examples:
+        - payload:
+            command: "turn_off"
+            params: {}
+
+    DeviceStatusChangedMessage:
+      name: device-status-changed
+      summary: Событие смены статуса устройства
+      payload:
+        $ref: '#/components/schemas/DeviceStatusChangedPayload'
+      examples:
+        - payload:
+            device_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+            previous_status: "on"
+            status: "off"
+            occurred_at: "2025-01-15T10:30:00Z"
+
+  schemas:
+    DeviceId:
+      type: string
+      format: uuid
+
+    TelemetryPayload:
+      type: object
+      required: [device_id, metric_name, value, recorded_at]
+      properties:
+        device_id:
+          $ref: '#/components/schemas/DeviceId'
+        metric_name:
+          type: string
+          example: "temperature"
+        value:
+          type: number
+          example: 29.0
+        unit:
+          type: string
+          example: "°C"
+        recorded_at:
+          type: string
+          format: date-time
+
+    CommandPayload:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: string
+          enum: [turn_on, turn_off, set_temperature, lock, unlock]
+        params:
+          type: object
+          additionalProperties: true
+
+    DeviceStatusChangedPayload:
+      type: object
+      required: [device_id, status, occurred_at]
+      properties:
+        device_id:
+          $ref: '#/components/schemas/DeviceId'
+        previous_status:
+          type: string
+          enum: [on, off, inactive, error]
+        status:
+          type: string
+          enum: [on, off, inactive, error]
+        occurred_at:
+          type: string
+          format: date-time

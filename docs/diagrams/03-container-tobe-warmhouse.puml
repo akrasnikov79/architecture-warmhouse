@@ -1,0 +1,65 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user, "Пользователь", "Покупает устройства SaaS и управляет домом")
+System_Ext(devices, "Умные устройства", "Датчики, реле, модули сторонних партнеров")
+
+System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
+
+    ' --- Маршрутизация ---
+    Container(api_gateway, "API Gateway", "Nginx", "Единая точка входа, маршрутизация")
+
+    ' --- Клиент и IoT-брокер ---
+    Container(web_app, "Web Portal", "React / JS", "Интерфейс самообслуживания")
+    Container(mqtt_broker, "MQTT Broker", "Mosquitto", "Приём данных от IoT-устройств и отправка команд на них")
+
+    ' --- Микросервисы ---
+    Container(user_service, "User & Auth Service", "Go", "Управление пользователями, аутентификация, авторизация, JWT")
+    ContainerDb(user_db, "User DB", "PostgreSQL", "Профили пользователей, роли, токены")
+
+    Container(home_service, "Home Management Service", "Go", "Управление домами, комнатами, группами устройств")
+    ContainerDb(home_db, "Home DB", "PostgreSQL", "Дома, комнаты, привязки")
+
+    Container(device_service, "Device Service", "Go", "Управление реестром устройств, отправка команд")
+    ContainerDb(device_db, "Device DB", "PostgreSQL", "Хранение списка устройств и их состояний")
+
+    Container(telemetry_service, "Telemetry Service", "Go", "Сбор и агрегация данных телеметрии")
+    ContainerDb(telemetry_db, "Telemetry DB", "TimescaleDB", "Хранение истории показаний")
+
+    Container(scenario_service, "Automation Service", "Go", "Обработка пользовательских правил и сценариев")
+    ContainerDb(scenario_db, "Scenario DB", "PostgreSQL", "Хранение сконфигурированных сценариев")
+
+    ' --- Шина событий ---
+    Container(message_broker, "Message Broker", "Kafka", "Асинхронная передача событий между сервисами")
+}
+
+' Пользователь / Устройства → Nginx
+Rel(user, api_gateway, "Обращается к системе", "HTTPS")
+Rel(devices, api_gateway, "Отправка телеметрии и статусов", "MQTT / HTTPS")
+
+' Nginx → Web Portal, MQTT Broker
+Rel(api_gateway, web_app, "Проксирует запросы", "HTTPS")
+Rel(api_gateway, mqtt_broker, "Проксирование IoT-трафика", "MQTT")
+
+' MQTT Broker → Kafka
+Rel(mqtt_broker, message_broker, "Пересылка событий от устройств", "Kafka Connect / Bridge")
+
+' Web Portal → все микросервисы
+Rel(web_app, user_service, "Авторизация, профиль", "REST")
+Rel(web_app, home_service, "Управление домами", "REST")
+Rel(web_app, device_service, "Управление устройствами", "REST")
+Rel(web_app, telemetry_service, "Просмотр телеметрии", "REST")
+Rel(web_app, scenario_service, "Настройка сценариев", "REST")
+
+' Микросервисы → БД
+Rel(user_service, user_db, "Чтение/запись", "SQL")
+Rel(home_service, home_db, "Чтение/запись", "SQL")
+Rel(device_service, device_db, "Чтение/запись", "SQL")
+Rel(telemetry_service, telemetry_db, "Вставка/чтение временных рядов", "SQL")
+Rel(scenario_service, scenario_db, "Чтение/запись", "SQL")
+
+' Микросервисы → Kafka
+Rel(device_service, message_broker, "Публикация событий (офлайн/онлайн)", "Kafka")
+Rel(telemetry_service, message_broker, "Слушает события телеметрии", "Kafka")
+Rel(scenario_service, message_broker, "Слушает триггеры, вызывает отправку команд", "Kafka")
+@enduml
